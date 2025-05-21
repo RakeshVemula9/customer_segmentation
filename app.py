@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -6,39 +7,72 @@ from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 
-st.set_page_config(page_title="Customer Segmentation", layout="wide")
-st.title("🛍️ Smart Customer Segmentation App")
+# App configuration
+st.set_page_config(page_title="🧠 Smart Customer Segmentation", layout="wide", initial_sidebar_state="expanded")
+
+# Custom styling
+st.markdown("""
+    <style>
+        .main {background-color: #f7f9fb;}
+        .block-container {padding-top: 2rem;}
+        h1, h2, h3 {color: #003366;}
+    </style>
+""", unsafe_allow_html=True)
+
+# Title
+st.title("🛍️ Smart Customer Segmentation Web App")
+
+# Sidebar Navigation
+with st.sidebar:
+    st.title("🧭 Navigation")
+    section = st.radio("Go to:", ["Upload Data", "Elbow Curve", "Cluster Visualization", "Explore Clusters", "Chat Assistant"])
 
 # Initialize chat history
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# File upload
-uploaded_file = st.file_uploader("Upload your CSV (e.g. Mall_Customers.csv)", type="csv")
+# Global variables
+df = None
+features = ['Gender', 'Age', 'Annual Income (k$)', 'Spending Score (1-100)']
 
-if uploaded_file:
-    df = pd.read_csv(uploaded_file)
-    st.success("Dataset loaded successfully!")
-    st.dataframe(df.head())
+# Upload Data Section
+if section == "Upload Data":
+    uploaded_file = st.file_uploader("Upload your dataset (e.g. Mall_Customers.csv)", type="csv")
+    if uploaded_file:
+        df = pd.read_csv(uploaded_file)
+        st.success("✅ Dataset loaded successfully!")
+        with st.expander("🔍 View Raw Data"):
+            st.dataframe(df.head())
 
+# If file is uploaded, process data and show other sections
+if "df" not in locals():
+    if "df" in st.session_state:
+        df = st.session_state.df
+else:
+    st.session_state.df = df
+
+if df is not None:
     # Preprocess
     le = LabelEncoder()
     if 'Gender' in df.columns:
         df['Gender'] = le.fit_transform(df['Gender'])
 
-    features = ['Gender', 'Age', 'Annual Income (k$)', 'Spending Score (1-100)']
     X = df[features]
     scaler = StandardScaler()
     X_scaled = scaler.fit_transform(X)
 
-    # Elbow method
-    wcss = []
-    for i in range(1, 11):
-        kmeans = KMeans(n_clusters=i, random_state=42)
-        kmeans.fit(X_scaled)
-        wcss.append(kmeans.inertia_)
+    # Store processed data
+    st.session_state.X_scaled = X_scaled
 
-    with st.expander("📉 Elbow Method"):
+    # Elbow Curve
+    if section == "Elbow Curve":
+        st.markdown("## 📉 Elbow Method to Determine Optimal Clusters")
+        wcss = []
+        for i in range(1, 11):
+            kmeans = KMeans(n_clusters=i, random_state=42)
+            kmeans.fit(X_scaled)
+            wcss.append(kmeans.inertia_)
+
         fig, ax = plt.subplots()
         ax.plot(range(1, 11), wcss, marker='o')
         ax.set_title("Elbow Curve")
@@ -46,67 +80,74 @@ if uploaded_file:
         ax.set_ylabel("WCSS")
         st.pyplot(fig)
 
-    # Cluster input
-    k = st.slider("Select number of clusters", 2, 10, 5)
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    df['Cluster'] = kmeans.fit_predict(X_scaled)
+    # Cluster Visualization
+    if section == "Cluster Visualization":
+        st.markdown("## 📊 Cluster Visualization with PCA")
+        k = st.slider("Select number of clusters", 2, 10, 5)
+        kmeans = KMeans(n_clusters=k, random_state=42)
+        df['Cluster'] = kmeans.fit_predict(X_scaled)
 
-    # PCA for cluster plotting
-    pca = PCA(n_components=2)
-    pcs = pca.fit_transform(X_scaled)
-    df['PCA1'], df['PCA2'] = pcs[:, 0], pcs[:, 1]
+        pca = PCA(n_components=2)
+        pcs = pca.fit_transform(X_scaled)
+        df['PCA1'], df['PCA2'] = pcs[:, 0], pcs[:, 1]
 
-    st.subheader("📊 Visualize Clusters")
-    fig2, ax2 = plt.subplots()
-    sns.scatterplot(data=df, x='PCA1', y='PCA2', hue='Cluster', palette='Set2', ax=ax2)
-    st.pyplot(fig2)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.metric("🧑‍🤝‍🧑 Total Customers", len(df))
+        with col2:
+            st.metric("🔢 Total Clusters", df['Cluster'].nunique())
 
-    # Cluster Explorer
-    st.subheader("🔎 Explore a Cluster")
-    cluster_id = st.selectbox("Select a cluster to explore", sorted(df['Cluster'].unique()))
-    cluster_df = df[df['Cluster'] == cluster_id]
-    st.write(f"Showing {len(cluster_df)} customers in Cluster {cluster_id}")
-    st.dataframe(cluster_df.head(10))
-    st.write("Average values:")
-    st.dataframe(cluster_df[features].mean().to_frame("Average").T)
+        fig, ax = plt.subplots()
+        sns.scatterplot(data=df, x='PCA1', y='PCA2', hue='Cluster', palette='tab10', ax=ax)
+        ax.set_title("Customer Segments in 2D Space", fontsize=14)
+        st.pyplot(fig)
 
-    # Download results
-    st.download_button(
-        label="⬇️ Download Segmented Data",
-        data=df.to_csv(index=False).encode('utf-8'),
-        file_name="Clustered_Customers.csv",
-        mime="text/csv"
-    )
+        st.download_button("⬇️ Download Segmented Data", data=df.to_csv(index=False).encode('utf-8'),
+                           file_name="Clustered_Customers.csv", mime="text/csv")
 
-    # Simple rule-based chatbot assistant
-    st.subheader("💬 Ask About Clusters")
-    user_input = st.text_input("Ask a question about the data (e.g., 'Average income in cluster 2')")
+    # Explore Clusters
+    if section == "Explore Clusters":
+        st.markdown("## 🔍 Explore Clusters")
+        if 'Cluster' not in df.columns:
+            st.warning("⚠️ Please run clustering first in 'Cluster Visualization' tab.")
+        else:
+            cluster_id = st.selectbox("Choose a cluster", sorted(df['Cluster'].unique()))
+            cluster_df = df[df['Cluster'] == cluster_id]
+            st.write(f"Showing {len(cluster_df)} customers in Cluster {cluster_id}")
+            st.dataframe(cluster_df.head(10))
+            st.write("📊 Average Feature Values:")
+            st.dataframe(cluster_df[features].mean().to_frame("Average").T)
 
-    if user_input:
-        response = "Sorry, I couldn't understand your question."
-        tokens = user_input.lower().split()
-        for i in range(len(tokens)):
-            if tokens[i] in ["cluster", "group"]:
-                try:
-                    cluster_num = int(tokens[i+1])
-                    if "income" in user_input:
-                        response = f"Average income in cluster {cluster_num} is: {df[df['Cluster']==cluster_num]['Annual Income (k$)'].mean():.2f} k$"
-                    elif "spending" in user_input:
-                        response = f"Average spending score in cluster {cluster_num} is: {df[df['Cluster']==cluster_num]['Spending Score (1-100)'].mean():.2f}"
-                    elif "age" in user_input:
-                        response = f"Average age in cluster {cluster_num} is: {df[df['Cluster']==cluster_num]['Age'].mean():.2f}"
-                    elif "how many" in user_input or "count" in user_input:
-                        response = f"There are {len(df[df['Cluster']==cluster_num])} customers in cluster {cluster_num}"
-                except:
-                    pass
+    # Chat Assistant
+    if section == "Chat Assistant":
+        st.markdown("## 💬 Ask Questions About the Segments")
+        user_input = st.text_input("Ask something like: 'Average income in cluster 2'")
+        if user_input:
+            response = "Sorry, I couldn't understand your question."
+            tokens = user_input.lower().split()
+            for i in range(len(tokens)):
+                if tokens[i] in ["cluster", "group"]:
+                    try:
+                        cluster_num = int(tokens[i + 1])
+                        if "income" in user_input:
+                            avg_income = df[df['Cluster'] == cluster_num]['Annual Income (k$)'].mean()
+                            response = f"Average income in cluster {cluster_num} is: {avg_income:.2f} k$"
+                        elif "spending" in user_input:
+                            avg_spend = df[df['Cluster'] == cluster_num]['Spending Score (1-100)'].mean()
+                            response = f"Average spending score in cluster {cluster_num} is: {avg_spend:.2f}"
+                        elif "age" in user_input:
+                            avg_age = df[df['Cluster'] == cluster_num]['Age'].mean()
+                            response = f"Average age in cluster {cluster_num} is: {avg_age:.2f}"
+                        elif "how many" in user_input or "count" in user_input:
+                            count = len(df[df['Cluster'] == cluster_num])
+                            response = f"There are {count} customers in cluster {cluster_num}"
+                    except:
+                        pass
+            st.session_state.chat_history.append((user_input, response))
+            st.write(f"**🧠 Assistant:** {response}")
 
-        st.session_state.chat_history.append((user_input, response))
-        st.write(f"**🧠 Assistant:** {response}")
-
-    # Display chat history
-    if st.session_state.chat_history:
-        with st.expander("🕘 Chat History"):
-            for q, a in st.session_state.chat_history:
-                st.markdown(f"**You:** {q}")
-                st.markdown(f"**Assistant:** {a}")
-
+        if st.session_state.chat_history:
+            with st.expander("🕘 Chat History"):
+                for q, a in st.session_state.chat_history:
+                    st.markdown(f"**You:** {q}")
+                    st.markdown(f"**Assistant:** {a}")
