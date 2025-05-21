@@ -27,46 +27,46 @@ with st.sidebar:
     st.title("🧭 Navigation")
     section = st.radio("Go to:", ["Upload Data", "Elbow Curve", "Cluster Visualization", "Explore Clusters", "Chat Assistant"])
 
-# Initialize chat history
+# Initialize session state
+if "df" not in st.session_state:
+    st.session_state.df = None
+if "X_scaled" not in st.session_state:
+    st.session_state.X_scaled = None
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Global variables
-df = None
 features = ['Gender', 'Age', 'Annual Income (k$)', 'Spending Score (1-100)']
 
 # Upload Data Section
 if section == "Upload Data":
     uploaded_file = st.file_uploader("Upload your dataset (e.g. Mall_Customers.csv)", type="csv")
-    if uploaded_file:
+    if uploaded_file is not None:
         df = pd.read_csv(uploaded_file)
-        st.success("✅ Dataset loaded successfully!")
+        st.session_state.df = df
+
+        # Preprocess
+        le = LabelEncoder()
+        if 'Gender' in df.columns:
+            df['Gender'] = le.fit_transform(df['Gender'])
+
+        X = df[features]
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        st.session_state.X_scaled = X_scaled
+        st.success("✅ Dataset loaded and processed!")
+
         with st.expander("🔍 View Raw Data"):
             st.dataframe(df.head())
 
-# If file is uploaded, process data and show other sections
-if "df" not in locals():
-    if "df" in st.session_state:
-        df = st.session_state.df
-else:
-    st.session_state.df = df
+# Use stored data
+df = st.session_state.df
+X_scaled = st.session_state.X_scaled
 
-if df is not None:
-    # Preprocess
-    le = LabelEncoder()
-    if 'Gender' in df.columns:
-        df['Gender'] = le.fit_transform(df['Gender'])
-
-    X = df[features]
-    scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
-
-    # Store processed data
-    st.session_state.X_scaled = X_scaled
-
-    # Elbow Curve
-    if section == "Elbow Curve":
-        st.markdown("## 📉 Elbow Method to Determine Optimal Clusters")
+# Elbow Curve
+if section == "Elbow Curve":
+    st.markdown("## 📉 Elbow Method to Determine Optimal Clusters")
+    if df is not None and X_scaled is not None:
         wcss = []
         for i in range(1, 11):
             kmeans = KMeans(n_clusters=i, random_state=42)
@@ -79,10 +79,13 @@ if df is not None:
         ax.set_xlabel("Number of Clusters")
         ax.set_ylabel("WCSS")
         st.pyplot(fig)
+    else:
+        st.warning("⚠️ Please upload and process data in 'Upload Data' section first.")
 
-    # Cluster Visualization
-    if section == "Cluster Visualization":
-        st.markdown("## 📊 Cluster Visualization with PCA")
+# Cluster Visualization
+if section == "Cluster Visualization":
+    st.markdown("## 📊 Cluster Visualization with PCA")
+    if df is not None and X_scaled is not None:
         k = st.slider("Select number of clusters", 2, 10, 5)
         kmeans = KMeans(n_clusters=k, random_state=42)
         df['Cluster'] = kmeans.fit_predict(X_scaled)
@@ -104,23 +107,26 @@ if df is not None:
 
         st.download_button("⬇️ Download Segmented Data", data=df.to_csv(index=False).encode('utf-8'),
                            file_name="Clustered_Customers.csv", mime="text/csv")
+    else:
+        st.warning("⚠️ Please upload and process data in 'Upload Data' section first.")
 
-    # Explore Clusters
-    if section == "Explore Clusters":
-        st.markdown("## 🔍 Explore Clusters")
-        if 'Cluster' not in df.columns:
-            st.warning("⚠️ Please run clustering first in 'Cluster Visualization' tab.")
-        else:
-            cluster_id = st.selectbox("Choose a cluster", sorted(df['Cluster'].unique()))
-            cluster_df = df[df['Cluster'] == cluster_id]
-            st.write(f"Showing {len(cluster_df)} customers in Cluster {cluster_id}")
-            st.dataframe(cluster_df.head(10))
-            st.write("📊 Average Feature Values:")
-            st.dataframe(cluster_df[features].mean().to_frame("Average").T)
+# Explore Clusters
+if section == "Explore Clusters":
+    st.markdown("## 🔍 Explore Clusters")
+    if df is not None and 'Cluster' in df.columns:
+        cluster_id = st.selectbox("Choose a cluster", sorted(df['Cluster'].unique()))
+        cluster_df = df[df['Cluster'] == cluster_id]
+        st.write(f"Showing {len(cluster_df)} customers in Cluster {cluster_id}")
+        st.dataframe(cluster_df.head(10))
+        st.write("📊 Average Feature Values:")
+        st.dataframe(cluster_df[features].mean().to_frame("Average").T)
+    else:
+        st.warning("⚠️ Please generate clusters in 'Cluster Visualization' first.")
 
-    # Chat Assistant
-    if section == "Chat Assistant":
-        st.markdown("## 💬 Ask Questions About the Segments")
+# Chat Assistant
+if section == "Chat Assistant":
+    st.markdown("## 💬 Ask Questions About the Segments")
+    if df is not None and 'Cluster' in df.columns:
         user_input = st.text_input("Ask something like: 'Average income in cluster 2'")
         if user_input:
             response = "Sorry, I couldn't understand your question."
@@ -151,3 +157,5 @@ if df is not None:
                 for q, a in st.session_state.chat_history:
                     st.markdown(f"**You:** {q}")
                     st.markdown(f"**Assistant:** {a}")
+    else:
+        st.warning("⚠️ Please generate clusters first to enable chat.")
